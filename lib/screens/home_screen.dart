@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
-import 'login_screen.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'webview_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
 
-  const HomeScreen({super.key, required this.userData});
+  const HomeScreen({Key? key, required this.userData}) : super(key: key);
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late Future<List<dynamic>> _tagihanFuture;
+  List<dynamic> tagihanList = [];
   List<int> _cart = [];
-  bool _isLoading = false;
+  bool isLoading = true;
 
   @override
   void initState() {
@@ -22,164 +23,235 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadData();
   }
 
-  void _loadData() {
+  Future<void> _loadData() async {
     setState(() {
-      _tagihanFuture = ApiService.getTagihan(widget.userData['id'].toString());
-      _cart.clear();
+      isLoading = true;
     });
+    try {
+      final response = await http.get(Uri.parse('http://10.0.2.2:3000/api/tagihan/${widget.userData['id']}'));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          tagihanList = data['data'];
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   void _toggleCart(int tagihanId) {
     setState(() {
       if (_cart.contains(tagihanId)) {
-        _cart.remove(tagihanId);
+        _cart.clear();
       } else {
         _cart.add(tagihanId);
       }
     });
   }
 
-  void _prosesCheckout(List<int> tagihanIds) async {
-    setState(() => _isLoading = true);
-    final result = await ApiService.checkout(widget.userData['id'].toString(), tagihanIds);
-    setState(() => _isLoading = false);
+  Future<void> _checkout(List<int> tagihanIds) async {
+    if (tagihanIds.isEmpty) return;
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'])));
+    // Munculkan loading agar terlihat ada proses berjalan saat tombol ditekan
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+    
+    try {
+      final response = await http.post(
+        Uri.parse('https://harmony-vigorous-immunize.ngrok-free.dev/api/checkout'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'user_id': widget.userData['id'],
+          'tagihan_ids': tagihanIds,
+        }),
+      );
 
-    if (result['status'] == true) {
-      _loadData();
+      if (mounted) Navigator.pop(context); 
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final redirectUrl = data['data']['redirect_url'];
+        
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => WebViewScreen(url: redirectUrl), 
+            ),
+          ).then((_) {
+            _loadData();
+            setState(() {
+              _cart.clear();
+            });
+          });
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Gagal checkout: ${response.statusCode} - ${response.body}')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context); 
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Koneksi Error: $e')),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: Text('Halo, ${widget.userData['nama']} 👋'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
+        backgroundColor: const Color(0xFF2196F3),
+        elevation: 0,
+        title: Text(
+          'Halo, ${widget.userData['nama']} 👋',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
         actions: [
-          if (_cart.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: Center(
-                child: Badge(
-                  label: Text(_cart.length.toString()),
-                  child: IconButton(
-                    icon: const Icon(Icons.shopping_cart),
-                    onPressed: () => _prosesCheckout(_cart),
-                  ),
-                ),
-              ),
-            ),
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.exit_to_app, color: Colors.white),
             onPressed: () {
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
             },
-          )
+          ),
         ],
       ),
-      body: _isLoading 
-          ? const Center(child: CircularProgressIndicator()) 
-          : FutureBuilder<List<dynamic>>(
-              future: _tagihanFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(child: Text('Tidak ada tagihan bulan ini. Hore! 🎉'));
-                }
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              padding: const EdgeInsets.all(16.0),
+              itemCount: tagihanList.length,
+              itemBuilder: (context, index) {
+                final item = tagihanList[index];
+                final isLunas = item['status_pembayaran'] == 'lunas';
 
-                final tagihanList = snapshot.data!;
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16.0),
-                  itemCount: tagihanList.length,
-                  itemBuilder: (context, index) {
-                    final item = tagihanList[index];
-                    final bulanNama = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"][item['bulan'] - 1];
-                    final isLunas = item['status_pembayaran'] == 'lunas';
-                    
-                    bool isDisabled = false;
-                    if (!isLunas) {
-                      for (int i = 0; i < index; i++) {
-                        if (tagihanList[i]['status_pembayaran'] == 'belum_bayar') {
-                          isDisabled = true;
-                          break;
-                        }
-                      }
+                bool isDisabled = false;
+                if (!isLunas) {
+                  for (int i = 0; i < index; i++) {
+                    if (tagihanList[i]['status_pembayaran'] != 'lunas' &&
+                        !_cart.contains(tagihanList[i]['tagihan_id'])) {
+                      isDisabled = true;
+                      break;
                     }
+                  }
+                }
 
-                    final inCart = _cart.contains(item['tagihan_id']);
+                final inCart = _cart.contains(item['tagihan_id']);
 
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      color: isLunas ? Colors.green[50] : Colors.white,
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  '${item['nama_kategori']} - $bulanNama ${item['tahun']}',
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                if (isLunas)
-                                  const Icon(Icons.check_circle, color: Colors.green)
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Rp ${item['nominal']}',
-                              style: TextStyle(
-                                color: isLunas ? Colors.green : Colors.orange,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            if (!isLunas) ...[
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: isDisabled ? Colors.grey : Colors.blue,
-                                      ),
-                                      onPressed: isDisabled ? null : () => _prosesCheckout([item['tagihan_id']]),
-                                      child: const Text('Bayar Langsung', style: TextStyle(color: Colors.white)),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    style: IconButton.styleFrom(
-                                      backgroundColor: isDisabled ? Colors.grey[200] : (inCart ? Colors.red[50] : Colors.blue[50]),
-                                    ),
-                                    icon: Icon(
-                                      inCart ? Icons.remove_shopping_cart : Icons.add_shopping_cart,
-                                      color: isDisabled ? Colors.grey : (inCart ? Colors.red : Colors.blue),
-                                    ),
-                                    onPressed: isDisabled ? null : () => _toggleCart(item['tagihan_id']),
-                                  ),
-                                ],
-                              )
-                            ]
-                          ],
-                        ),
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 16.0),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12.0),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        spreadRadius: 1,
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
                       ),
-                    );
-                  },
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${item['nama_kategori']} - ${item['bulan']} ${item['tahun']}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14.0,
+                          ),
+                        ),
+                        const SizedBox(height: 8.0),
+                        Text(
+                          'Rp ${double.parse(item['nominal'].toString()).toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: Colors.orange,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16.0,
+                          ),
+                        ),
+                        const SizedBox(height: 16.0),
+                        if (isLunas)
+                          const Text(
+                            'LUNAS',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          )
+                        else
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: isDisabled || inCart
+                                      ? null 
+                                      : () => _checkout([item['tagihan_id']]),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: isDisabled || inCart
+                                        ? Colors.grey[300]
+                                        : const Color(0xFF2196F3),
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20.0),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                                  ),
+                                  child: const Text('Bayar Langsung'),
+                                ),
+                              ),
+                              const SizedBox(width: 12.0),
+                              InkWell(
+                                onTap: isDisabled ? null : () => _toggleCart(item['tagihan_id']),
+                                child: Container(
+                                  padding: const EdgeInsets.all(10.0),
+                                  decoration: BoxDecoration(
+                                    color: isDisabled
+                                        ? Colors.grey[200]
+                                        : (inCart ? Colors.blue : const Color(0xFFE3F2FD)),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    inCart ? Icons.shopping_cart : Icons.add_shopping_cart,
+                                    color: isDisabled
+                                        ? Colors.grey
+                                        : (inCart ? Colors.white : const Color(0xFF2196F3)),
+                                    size: 20.0,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
                 );
               },
             ),
+      floatingActionButton: _cart.isNotEmpty
+          ? FloatingActionButton.extended(
+              onPressed: () => _checkout(_cart),
+              label: Text('Checkout (${_cart.length})'),
+              icon: const Icon(Icons.payment),
+              backgroundColor: Colors.orange,
+            )
+          : null,
     );
   }
 }
