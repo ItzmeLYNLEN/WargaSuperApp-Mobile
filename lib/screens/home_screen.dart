@@ -56,7 +56,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _checkout(List<int> tagihanIds) async {
     if (tagihanIds.isEmpty) return;
 
-    // Munculkan loading agar terlihat ada proses berjalan saat tombol ditekan
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -124,6 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.exit_to_app, color: Colors.white),
             onPressed: () {
+              // Logika logout
             },
           ),
         ],
@@ -136,18 +136,6 @@ class _HomeScreenState extends State<HomeScreen> {
               itemBuilder: (context, index) {
                 final item = tagihanList[index];
                 final isLunas = item['status_pembayaran'] == 'lunas';
-
-                bool isDisabled = false;
-                if (!isLunas) {
-                  for (int i = 0; i < index; i++) {
-                    if (tagihanList[i]['status_pembayaran'] != 'lunas' &&
-                        !_cart.contains(tagihanList[i]['tagihan_id'])) {
-                      isDisabled = true;
-                      break;
-                    }
-                  }
-                }
-
                 final inCart = _cart.contains(item['tagihan_id']);
 
                 return Container(
@@ -199,11 +187,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               Expanded(
                                 child: ElevatedButton(
-                                  onPressed: isDisabled || inCart
+                                  // Tombol mati HANYA jika item sedang masuk keranjang
+                                  onPressed: inCart
                                       ? null 
                                       : () => _checkout([item['tagihan_id']]),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: isDisabled || inCart
+                                    backgroundColor: inCart
                                         ? Colors.grey[300]
                                         : const Color(0xFF2196F3),
                                     foregroundColor: Colors.white,
@@ -218,20 +207,17 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               const SizedBox(width: 12.0),
                               InkWell(
-                                onTap: isDisabled ? null : () => _toggleCart(item['tagihan_id']),
+                                // Keranjang bebas diklik kapan saja
+                                onTap: () => _toggleCart(item['tagihan_id']),
                                 child: Container(
                                   padding: const EdgeInsets.all(10.0),
                                   decoration: BoxDecoration(
-                                    color: isDisabled
-                                        ? Colors.grey[200]
-                                        : (inCart ? Colors.blue : const Color(0xFFE3F2FD)),
+                                    color: inCart ? Colors.blue : const Color(0xFFE3F2FD),
                                     shape: BoxShape.circle,
                                   ),
                                   child: Icon(
                                     inCart ? Icons.shopping_cart : Icons.add_shopping_cart,
-                                    color: isDisabled
-                                        ? Colors.grey
-                                        : (inCart ? Colors.white : const Color(0xFF2196F3)),
+                                    color: inCart ? Colors.white : const Color(0xFF2196F3),
                                     size: 20.0,
                                   ),
                                 ),

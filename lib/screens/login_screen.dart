@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'main_screen.dart';
+import 'admin_screen.dart'; 
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -27,12 +29,19 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (result['status'] == true) {
-      Navigator.pushReplacement(
-        context, 
-        MaterialPageRoute(
-          builder: (_) => MainScreen(userData: result['data']),
-        ),
-      );
+      final userData = result['data'];
+      
+      if (userData['role'] == 'admin') {
+        Navigator.pushReplacement(
+          context, 
+          MaterialPageRoute(builder: (_) => AdminScreen(userData: userData)),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context, 
+          MaterialPageRoute(builder: (_) => MainScreen(userData: userData)),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(result['message'] ?? 'Login gagal')),

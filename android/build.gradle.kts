@@ -15,6 +15,19 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
+
+// --- POSISI YANG BENAR: MENCEGAT SEBELUM PROSES EVALUASI DIMULAI ---
+subprojects {
+    afterEvaluate {
+        if (project.plugins.hasPlugin("com.android.library")) {
+            project.extensions.configure<com.android.build.gradle.LibraryExtension>("android") {
+                compileSdk = 36
+            }
+        }
+    }
+}
+
+// Kereta Gradle baru boleh jalan setelah dicegat di atas
 subprojects {
     project.evaluationDependsOn(":app")
 }
