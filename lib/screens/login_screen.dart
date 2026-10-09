@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'main_screen.dart';
-import 'admin_screen.dart'; 
+import 'admin_screen.dart';
+import 'force_reset_screen.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -18,29 +19,36 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _handleLogin() async {
     setState(() => _isLoading = true);
-    
+
     final result = await ApiService.login(
-      _noWaController.text, 
+      _noWaController.text,
       _passwordController.text,
     );
-    
+
     setState(() => _isLoading = false);
 
     if (!mounted) return;
 
     if (result['status'] == true) {
       final userData = result['data'];
-      
-      if (userData['role'] == 'admin') {
+
+      if (userData['wajib_ganti_password'] == 1 || userData['wajib_ganti_password'] == true) {
         Navigator.pushReplacement(
-          context, 
-          MaterialPageRoute(builder: (_) => AdminScreen(userData: userData)),
+          context,
+          MaterialPageRoute(builder: (_) => ForceResetScreen(userData: userData)),
         );
       } else {
-        Navigator.pushReplacement(
-          context, 
-          MaterialPageRoute(builder: (_) => MainScreen(userData: userData)),
-        );
+        if (userData['role'] == 'admin') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => AdminScreen(userData: userData)),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => MainScreen(userData: userData)),
+          );
+        }
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -64,8 +72,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 'Smart RT/RW',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 32, 
-                  fontWeight: FontWeight.bold, 
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
                   color: Colors.blue
                 ),
               ),
@@ -104,10 +112,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   onPressed: _isLoading ? null : _handleLogin,
-                  child: _isLoading 
-                    ? const CircularProgressIndicator(color: Colors.white) 
+                  child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
                     : const Text(
-                        'Masuk', 
+                        'Masuk',
                         style: TextStyle(fontSize: 18, color: Colors.white)
                       ),
                 ),

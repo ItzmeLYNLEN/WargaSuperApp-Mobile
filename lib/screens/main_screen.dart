@@ -23,7 +23,7 @@ class _MainScreenState extends State<MainScreen> {
     _pages = [
       HomeScreen(userData: widget.userData),
       LayananScreen(userData: widget.userData),
-      const JadwalScreen(),
+      JadwalScreen(userData: widget.userData),
       const PusatInformasiScreen(),
     ];
   }

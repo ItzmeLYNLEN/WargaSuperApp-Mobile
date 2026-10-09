@@ -41,7 +41,6 @@ class _AdminManageScreenState extends State<AdminManageScreen> with SingleTicker
     }
   }
 
-  // ================= EDIT PENGUMUMAN =================
   void _showEditInfoForm(Map<String, dynamic> item) {
     final tipeController = TextEditingController(text: item['tipe']);
     final judulController = TextEditingController(text: item['judul']);
@@ -131,7 +130,6 @@ class _AdminManageScreenState extends State<AdminManageScreen> with SingleTicker
     );
   }
 
-  // ================= EDIT JADWAL =================
   void _showEditJadwalForm(Map<String, dynamic> item) {
     final judulController = TextEditingController(text: item['judul_kegiatan']);
     final jenisController = TextEditingController(text: item['jenis_kegiatan']);
@@ -241,7 +239,6 @@ class _AdminManageScreenState extends State<AdminManageScreen> with SingleTicker
     );
   }
 
-  // ================= KONFIRMASI HAPUS =================
   void _confirmDelete(String type, int id) {
     showDialog(
       context: context,
@@ -254,7 +251,9 @@ class _AdminManageScreenState extends State<AdminManageScreen> with SingleTicker
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () async {
               Navigator.pop(context);
-              String url = type == 'pengumuman' ? 'http://10.0.2.2:3000/api/admin/informasi/$id' : 'http://10.0.2.2:3000/api/admin/jadwal/$id';
+              String url = type == 'pengumuman' 
+                  ? 'http://10.0.2.2:3000/api/admin/informasi/$id' 
+                  : 'http://10.0.2.2:3000/api/admin/jadwal/$id';
               final res = await http.delete(Uri.parse(url));
               if (res.statusCode == 200) {
                 ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text('$type dihapus!'), backgroundColor: Colors.green));
@@ -293,7 +292,6 @@ class _AdminManageScreenState extends State<AdminManageScreen> with SingleTicker
         : TabBarView(
             controller: _tabController,
             children: [
-              // TAB 1: PENGUMUMAN
               ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: infoList.length,
@@ -334,7 +332,6 @@ class _AdminManageScreenState extends State<AdminManageScreen> with SingleTicker
                   );
                 },
               ),
-              // TAB 2: JADWAL
               ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: jadwalList.length,

@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'login_screen.dart';
 import 'admin_manage_screen.dart';
+import 'admin_manage_warga_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -19,6 +20,11 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   int _selectedIndex = 0;
   bool _isDialOpen = false;
   late AnimationController _animationController;
+
+  DateTimeRange? _selectedDateRange;
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+  String _selectedFasumStatus = 'semua';
 
   final List<Map<String, dynamic>> _listBulan = [
     {'id': '1', 'nama': 'Januari'}, {'id': '2', 'nama': 'Februari'},
@@ -41,6 +47,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   @override
   void dispose() {
     _animationController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -59,6 +66,38 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     setState(() {});
   }
 
+  Future<void> _pickDateRange() async {
+    DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+      initialDateRange: _selectedDateRange,
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDateRange = picked;
+      });
+    }
+  }
+
+  void _clearDateFilter() {
+    setState(() {
+      _selectedDateRange = null;
+    });
+  }
+
+  bool _isWithinRange(String dateString) {
+    if (_selectedDateRange == null) return true;
+    try {
+      DateTime itemDate = DateTime.parse(dateString);
+      DateTime start = _selectedDateRange!.start;
+      DateTime end = _selectedDateRange!.end.add(const Duration(days: 1));
+      return itemDate.isAfter(start.subtract(const Duration(days: 1))) && itemDate.isBefore(end);
+    } catch (e) {
+      return true;
+    }
+  }
+
   Future<Map<String, dynamic>> _fetchRekap() async {
     try {
       final res = await http.get(Uri.parse('http://10.0.2.2:3000/api/admin/rekap-kas'));
@@ -74,17 +113,42 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
   Future<List<dynamic>> _fetchTamu() async {
     final res = await http.get(Uri.parse('http://10.0.2.2:3000/api/admin/laporan-tamu'));
-    return json.decode(res.body)['data'];
+    List<dynamic> data = json.decode(res.body)['data'];
+    return data.where((item) {
+      bool inRange = _isWithinRange(item['created_at'].toString());
+      bool matchesSearch = _searchQuery.isEmpty || 
+          (item['nama_tamu']?.toString().toLowerCase().contains(_searchQuery) ?? false) ||
+          (item['nama']?.toString().toLowerCase().contains(_searchQuery) ?? false) ||
+          (item['pelat_kendaraan']?.toString().toLowerCase().contains(_searchQuery) ?? false);
+      return inRange && matchesSearch;
+    }).toList();
   }
 
   Future<List<dynamic>> _fetchFasum() async {
     final res = await http.get(Uri.parse('http://10.0.2.2:3000/api/admin/laporan-fasum'));
-    return json.decode(res.body)['data'];
+    List<dynamic> data = json.decode(res.body)['data'];
+    return data.where((item) {
+      bool inRange = _isWithinRange(item['created_at'].toString());
+      bool matchesSearch = _searchQuery.isEmpty || 
+          (item['kategori']?.toString().toLowerCase().contains(_searchQuery) ?? false) ||
+          (item['nama']?.toString().toLowerCase().contains(_searchQuery) ?? false) ||
+          (item['deskripsi_lokasi']?.toString().toLowerCase().contains(_searchQuery) ?? false);
+      bool matchesStatus = _selectedFasumStatus == 'semua' || (item['status'] ?? 'menunggu') == _selectedFasumStatus;
+      return inRange && matchesSearch && matchesStatus;
+    }).toList();
   }
 
   Future<List<dynamic>> _fetchDaftarTagihan() async {
     final res = await http.get(Uri.parse('http://10.0.2.2:3000/api/admin/daftar-tagihan'));
-    return json.decode(res.body)['data'];
+    List<dynamic> data = json.decode(res.body)['data'];
+    return data.where((item) {
+      bool inRange = _isWithinRange(item['created_at'].toString());
+      bool matchesSearch = _searchQuery.isEmpty || 
+          (item['nama_kategori']?.toString().toLowerCase().contains(_searchQuery) ?? false) ||
+          (item['jenis']?.toString().toLowerCase().contains(_searchQuery) ?? false) ||
+          (item['tahun']?.toString().toLowerCase().contains(_searchQuery) ?? false);
+      return inRange && matchesSearch;
+    }).toList();
   }
 
   String _getNamaBulan(String idBulan) {
@@ -597,6 +661,75 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     );
   }
 
+  void _showUpdateFasumDialog(Map<String, dynamic> item) {
+    String selectedStatus = item['status'] ?? 'menunggu';
+    if (!['menunggu', 'proses', 'selesai'].contains(selectedStatus)) {
+      selectedStatus = 'menunggu';
+    }
+    TextEditingController catatanController = TextEditingController(text: item['catatan_admin'] ?? '');
+    bool isSubmitting = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(builder: (ctx, setModalState) {
+          return AlertDialog(
+            title: const Text('Tindak Lanjuti Laporan'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedStatus,
+                  decoration: const InputDecoration(labelText: 'Status Pengerjaan', border: OutlineInputBorder()),
+                  items: const [
+                    DropdownMenuItem(value: 'menunggu', child: Text('Menunggu ⏳')),
+                    DropdownMenuItem(value: 'proses', child: Text('Sedang Diproses 🛠️')),
+                    DropdownMenuItem(value: 'selesai', child: Text('Selesai ✅')),
+                  ],
+                  onChanged: (val) => setModalState(() => selectedStatus = val!),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: catatanController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Catatan Admin', border: OutlineInputBorder()),
+                )
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                onPressed: isSubmitting ? null : () async {
+                  setModalState(() => isSubmitting = true);
+                  try {
+                    final response = await http.put(
+                      Uri.parse('http://10.0.2.2:3000/api/admin/laporan-fasum/${item['id']}'),
+                      headers: {'Content-Type': 'application/json'},
+                      body: json.encode({'status': selectedStatus, 'catatan_admin': catatanController.text}),
+                    );
+                    if (response.statusCode == 200 && mounted) {
+                      Navigator.pop(dialogContext);
+                      _refreshData();
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Status berhasil diupdate!'), backgroundColor: Colors.green));
+                    } else if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: ${response.statusCode} - Server Error'), backgroundColor: Colors.red));
+                    }
+                  } catch (e) {
+                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Koneksi Error: $e'), backgroundColor: Colors.red));
+                  } finally {
+                    if (mounted) setModalState(() => isSubmitting = false);
+                  }
+                },
+                child: isSubmitting ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(color: Colors.white)) : const Text('Simpan Update', style: TextStyle(color: Colors.white)),
+              )
+            ],
+          );
+        });
+      },
+    );
+  }
+
   Widget _buildDashboard() {
     return FutureBuilder<Map<String, dynamic>>(
       future: _fetchRekap(),
@@ -621,72 +754,224 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     );
   }
 
+  Widget _buildFilterHeader() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.filter_alt, color: Colors.grey),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _selectedDateRange == null 
+                    ? 'Semua Waktu' 
+                    : '${_selectedDateRange!.start.toLocal().toString().split(' ')[0]} s/d ${_selectedDateRange!.end.toLocal().toString().split(' ')[0]}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              if (_selectedDateRange != null)
+                IconButton(icon: const Icon(Icons.clear, color: Colors.red), onPressed: _clearDateFilter),
+              OutlinedButton(onPressed: _pickDateRange, child: const Text('Pilih Tanggal')),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Cari data...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {
+                          _searchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              contentPadding: const EdgeInsets.symmetric(vertical: 0),
+            ),
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value.toLowerCase();
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTamu() {
-    return FutureBuilder<List<dynamic>>(
-      future: _fetchTamu(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-        if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text('Belum ada laporan tamu.'));
-        return ListView.builder(
-          padding: const EdgeInsets.all(16.0),
-          itemCount: snapshot.data!.length,
-          itemBuilder: (context, index) {
-            final item = snapshot.data![index];
-            return Card(margin: const EdgeInsets.only(bottom: 12), child: ListTile(leading: const CircleAvatar(backgroundColor: Colors.blue, child: Icon(Icons.person, color: Colors.white)), title: Text('${item['nama_tamu']} (${item['lama_menginap_hari']} Hari)', style: const TextStyle(fontWeight: FontWeight.bold)), subtitle: Text('Pelapor: ${item['nama']}\nPelat: ${item['pelat_kendaraan'] ?? '-'}'), isThreeLine: true));
-          },
-        );
-      },
+    return Column(
+      children: [
+        _buildFilterHeader(),
+        Expanded(
+          child: FutureBuilder<List<dynamic>>(
+            future: _fetchTamu(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+              if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text('Data tamu tidak ditemukan.'));
+              return ListView.builder(
+                padding: const EdgeInsets.all(16.0),
+                itemCount: snapshot.data!.length,
+                itemBuilder: (context, index) {
+                  final item = snapshot.data![index];
+                  String tglStr = item['created_at'].toString().split('T')[0];
+                  return Card(margin: const EdgeInsets.only(bottom: 12), child: ListTile(leading: const CircleAvatar(backgroundColor: Colors.blue, child: Icon(Icons.person, color: Colors.white)), title: Text('${item['nama_tamu']} (${item['lama_menginap_hari']} Hari)', style: const TextStyle(fontWeight: FontWeight.bold)), subtitle: Text('Tgl Lapor: $tglStr\nPelapor: ${item['nama']}\nPelat: ${item['pelat_kendaraan'] ?? '-'}'), isThreeLine: true));
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildFasum() {
-    return FutureBuilder<List<dynamic>>(
-      future: _fetchFasum(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-        if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text('Belum ada laporan fasum.'));
-        return ListView.builder(
-          padding: const EdgeInsets.all(16.0),
-          itemCount: snapshot.data!.length,
-          itemBuilder: (context, index) {
-            final item = snapshot.data![index];
-            return Card(margin: const EdgeInsets.only(bottom: 12), child: ListTile(leading: const CircleAvatar(backgroundColor: Colors.orange, child: Icon(Icons.broken_image, color: Colors.white)), title: Text('${item['kategori']}', style: const TextStyle(fontWeight: FontWeight.bold)), subtitle: Text('Pelapor: ${item['nama']}\nLokasi: ${item['deskripsi_lokasi']}'), isThreeLine: true));
-          },
-        );
-      },
+    return Column(
+      children: [
+        _buildFilterHeader(),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          color: Colors.white,
+          child: Row(
+            children: [
+              const Text('Status: ', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: ['semua', 'menunggu', 'proses', 'selesai'].map((status) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ChoiceChip(
+                          label: Text(status.toUpperCase(), style: const TextStyle(fontSize: 12)),
+                          selected: _selectedFasumStatus == status,
+                          selectedColor: Colors.blue[100],
+                          onSelected: (bool selected) {
+                            setState(() {
+                              _selectedFasumStatus = status;
+                            });
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: FutureBuilder<List<dynamic>>(
+            future: _fetchFasum(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+              if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text('Data laporan fasum tidak ditemukan.'));
+              return ListView.builder(
+                padding: const EdgeInsets.all(16.0),
+                itemCount: snapshot.data!.length,
+                itemBuilder: (context, index) {
+                  final item = snapshot.data![index];
+                  String status = item['status'] ?? 'menunggu';
+                  Color statusColor = status == 'selesai' ? Colors.green : (status == 'proses' ? Colors.orange : Colors.grey);
+                  String tglStr = item['created_at'].toString().split('T')[0];
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('${item['kategori']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                                child: Text(status.toUpperCase(), style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.bold)),
+                              )
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text('Tgl Lapor: $tglStr', style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+                          Text('Pelapor: ${item['nama']}'),
+                          Text('Lokasi: ${item['deskripsi_lokasi']}'),
+                          if (item['catatan_admin'] != null && item['catatan_admin'].toString().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Text('Catatan: ${item['catatan_admin']}', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.blue)),
+                            ),
+                          const Divider(),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.edit_note, size: 18),
+                              label: const Text('Update Status'),
+                              onPressed: () => _showUpdateFasumDialog(item),
+                            ),
+                          )
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildDaftarTagihan() {
-    return FutureBuilder<List<dynamic>>(
-      future: _fetchDaftarTagihan(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-        if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text('Belum ada tagihan yang disebar.'));
-        return ListView.builder(
-          padding: const EdgeInsets.all(16.0),
-          itemCount: snapshot.data!.length,
-          itemBuilder: (context, index) {
-            final item = snapshot.data![index];
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                leading: CircleAvatar(backgroundColor: item['jenis'] == 'wajib' ? Colors.red : Colors.green, child: const Icon(Icons.receipt, color: Colors.white)),
-                title: Text('${item['nama_kategori']} (${_getNamaBulan(item['bulan'].toString())} ${item['tahun']})', style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('Sifat: ${item['jenis'].toString().toUpperCase()}\nRp ${item['nominal']} • Disebar ke ${item['total_warga']} Warga'),
-                isThreeLine: true,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _showFormEditTagihan(item)),
-                    IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _konfirmasiHapusTagihan(item)),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+    return Column(
+      children: [
+        _buildFilterHeader(),
+        Expanded(
+          child: FutureBuilder<List<dynamic>>(
+            future: _fetchDaftarTagihan(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+              if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text('Data tagihan tidak ditemukan.'));
+              return ListView.builder(
+                padding: const EdgeInsets.all(16.0),
+                itemCount: snapshot.data!.length,
+                itemBuilder: (context, index) {
+                  final item = snapshot.data![index];
+                  String tglStr = item['created_at'].toString().split('T')[0];
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: ListTile(
+                      leading: CircleAvatar(backgroundColor: item['jenis'] == 'wajib' ? Colors.red : Colors.green, child: const Icon(Icons.receipt, color: Colors.white)),
+                      title: Text('${item['nama_kategori']} (${_getNamaBulan(item['bulan'].toString())} ${item['tahun']})', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text('Tgl Dibuat: $tglStr\nSifat: ${item['jenis'].toString().toUpperCase()}\nRp ${item['nominal']} • Disebar ke ${item['total_warga']} Warga'),
+                      isThreeLine: true,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _showFormEditTagihan(item)),
+                          IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _konfirmasiHapusTagihan(item)),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -721,6 +1006,18 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const AdminManageScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.people, color: Colors.green),
+              title: const Text('Kelola Data Warga'),
+              subtitle: const Text('Edit atau hapus data warga'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AdminManageWargaScreen()),
                 );
               },
             ),
@@ -786,7 +1083,15 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         currentIndex: _selectedIndex,
         selectedItemColor: const Color(0xFF2196F3),
         unselectedItemColor: Colors.grey,
-        onTap: (index) => setState(() => _selectedIndex = index),
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = index;
+            _selectedDateRange = null;
+            _searchQuery = '';
+            _searchController.clear();
+            _selectedFasumStatus = 'semua';
+          });
+        },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Keuangan'),
           BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Tamu'),
